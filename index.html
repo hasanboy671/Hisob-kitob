@@ -129,6 +129,24 @@
         .stat-kam { color: #f6ad55; }
         .stat-tugadi { color: #fc8181; }
 
+        /* Qidiruv bo'limi */
+        .search-section {
+            margin-bottom: 15px;
+        }
+        .search-section input {
+            width: 100%;
+            padding: 12px;
+            background-color: #1f252e;
+            border: 1px solid #2d3543;
+            border-radius: 6px;
+            color: white;
+            font-size: 15px;
+        }
+        .search-section input:focus {
+            border-color: #00f2fe;
+            outline: none;
+        }
+
         /* Kiritish Formasi */
         .form-section {
             background-color: #1f252e;
@@ -147,7 +165,7 @@
             flex-direction: column;
             gap: 12px;
         }
-        .form-grid input {
+        .form-grid input, .form-grid select {
             padding: 12px;
             background-color: #15191e;
             border: 1px solid #3b4454;
@@ -155,9 +173,23 @@
             color: white;
             font-size: 15px;
         }
-        .form-grid input:focus {
+        .form-grid input:focus, .form-grid select:focus {
             border-color: #00f2fe;
             outline: none;
+        }
+        .qty-row {
+            display: flex;
+            gap: 10px;
+        }
+        .qty-row input {
+            flex: 2;
+        }
+        .qty-row select {
+            flex: 1;
+            color: #ffffff;
+        }
+        .qty-row select option {
+            background-color: #15191e;
         }
         .submit-btn {
             padding: 14px;
@@ -223,18 +255,21 @@
         /* Boshqaruv tugmalari */
         .actions-row {
             display: flex;
-            gap: 10px;
+            gap: 8px;
             margin-top: 15px;
+            flex-wrap: wrap;
         }
         .btn-act {
             flex: 1;
-            padding: 12px;
+            min-width: 45px;
+            padding: 12px 5px;
             border: none;
             border-radius: 6px;
-            font-size: 16px;
+            font-size: 14px;
             font-weight: bold;
             cursor: pointer;
             color: white;
+            text-align: center;
         }
         .btn-p { background-color: #48bb78; }
         .btn-m { background-color: #f6ad55; }
@@ -280,10 +315,22 @@
             <h3>Yangi Mahsulot Kiritish</h3>
             <div class="form-grid">
                 <input type="text" id="p-name" placeholder="Mahsulot nomi">
-                <input type="number" id="p-qty" placeholder="Soni">
+                <div class="qty-row">
+                    <input type="number" id="p-qty" placeholder="Soni">
+                    <select id="p-unit">
+                        <option value="dona">dona</option>
+                        <option value="karobka">karobka</option>
+                        <option value="blok">blok</option>
+                    </select>
+                </div>
                 <input type="number" id="p-limit" placeholder="Min. chegara">
                 <button class="submit-btn" onclick="addSubmit()">Omborga Yuklash</button>
             </div>
+        </div>
+
+        <!-- QIDIRUV PANELI -->
+        <div class="search-section">
+            <input type="text" id="search-input" placeholder="🔍 Mahsulot nomini qidirish..." oninput="filterProducts()">
         </div>
 
         <div class="products-list" id="products-container"></div>
@@ -312,6 +359,7 @@
 
         let isLoginMode = true;
         let currentUser = JSON.parse(localStorage.getItem('current_user')) || null;
+        let localInventoryData = []; // Qidiruvni filtrlash uchun lokal massiv
 
         window.onload = function() {
             if (currentUser) { showDashboard(); } else { showAuth(); }
@@ -374,10 +422,12 @@
         window.addSubmit = async function() {
             const name = document.getElementById('p-name').value.trim();
             const qty = parseInt(document.getElementById('p-qty').value);
+            const unit = document.getElementById('p-unit').value;
             const limit = parseInt(document.getElementById('p-limit').value);
             if (!name || isNaN(qty) || isNaN(limit)) return alert("To'g'ri to'ldiring!");
 
-            await addDoc(collection(db, "inventory"), { name, qty, limit });
+            // Bazaga 'unit' (o'lchov birligi) ham qo'shildi
+            await addDoc(collection(db, "inventory"), { name, qty, limit, unit: unit || "dona" });
             document.getElementById('p-name').value = ''; 
             document.getElementById('p-qty').value = ''; 
             document.getElementById('p-limit').value = '';
@@ -385,45 +435,72 @@
 
         function listenToInventory() {
             onSnapshot(collection(db, "inventory"), (snapshot) => {
-                const container = document.getElementById('products-container');
-                container.innerHTML = '';
-                let jami = 0, kam = 0, tugadi = 0;
-
+                localInventoryData = [];
                 snapshot.forEach((docSnap) => {
-                    jami++;
                     const item = docSnap.data();
-                    const id = docSnap.id;
-                    
-                    let badgeText = 'Yetarli', badgeClass = 'yetarli', cardClass = '', tavsiyaText = 'Zaxira joyida', tavsiyaClass = 'yaxshi';
-
-                    if (item.qty === 0) { 
-                        badgeText = 'Tugadi'; badgeClass = 'tugadi'; cardClass = 'tugadi'; 
-                        tavsiyaText = `Olib kelish kerak: ${item.limit + 5} ta`; tavsiyaClass = 'yomon';
-                        tugadi++; 
-                    } else if (item.qty <= item.limit) { 
-                        badgeText = 'Kam qoldi'; badgeClass = 'kam'; cardClass = 'kam'; 
-                        tavsiyaText = `Olib kelish kerak: ${item.limit - item.qty} ta`; tavsiyaClass = 'yomon';
-                        kam++; 
-                    }
-
-                    container.innerHTML += `
-                        <div class="product-card ${cardClass}">
-                            <div class="prod-title">${item.name}</div>
-                            <div class="prod-info">Omborda bor: <b>${item.qty} ta</b></div>
-                            <div class="prod-info">Minimal chegara: ${item.limit} ta</div>
-                            <div class="tavsiya ${tavsiyaClass}">Tavsiya: ${tavsiyaText}</div>
-                            <span class="status-badge ${badgeClass}">${badgeText}</span>
-                            <div class="actions-row">
-                                <button class="btn-act btn-p" onclick="updateQty('${id}', ${item.qty}, 1)">+1</button>
-                                <button class="btn-act btn-m" onclick="updateQty('${id}', ${item.qty}, -1)">-1</button>
-                                <button class="btn-act btn-d" onclick="deleteItem('${id}')">🗑️</button>
-                            </div>
-                        </div>`;
+                    localInventoryData.push({
+                        id: docSnap.id,
+                        name: item.name,
+                        qty: item.qty,
+                        limit: item.limit,
+                        unit: item.unit || 'ta'
+                    });
                 });
-                document.getElementById('count-jami').innerText = jami;
-                document.getElementById('count-kam').innerText = kam;
-                document.getElementById('count-tugadi').innerText = tugadi;
+                renderProducts(localInventoryData);
             });
+        }
+
+        // Qidiruv va render funksiyasini integratsiya qilish
+        window.filterProducts = function() {
+            const query = document.getElementById('search-input').value.toLowerCase().trim();
+            const filtered = localInventoryData.filter(item => item.name.toLowerCase().includes(query));
+            renderProducts(filtered);
+        };
+
+        function renderProducts(itemsList) {
+            const container = document.getElementById('products-container');
+            container.innerHTML = '';
+            let jami = 0, kam = 0, tugadi = 0;
+
+            // Umumiy statistika hamon bazadagi barcha ma'lumotlar asosida hisoblanadi
+            localInventoryData.forEach(item => {
+                if (item.qty === 0) tugadi++;
+                else if (item.qty <= item.limit) kam++;
+                jami++;
+            });
+
+            itemsList.forEach((item) => {
+                let badgeText = 'Yetarli', badgeClass = 'yetarli', cardClass = '', tavsiyaText = 'Zaxira joyida', tavsiyaClass = 'yaxshi';
+                const unitStr = item.unit;
+
+                if (item.qty === 0) { 
+                    badgeText = 'Tugadi'; badgeClass = 'tugadi'; cardClass = 'tugadi'; 
+                    tavsiyaText = `Olib kelish kerak: ${item.limit + 5} ${unitStr}`; tavsiyaClass = 'yomon';
+                } else if (item.qty <= item.limit) { 
+                    badgeText = 'Kam qoldi'; badgeClass = 'kam'; cardClass = 'kam'; 
+                    tavsiyaText = `Olib kelish kerak: ${item.limit - item.qty} ${unitStr}`; tavsiyaClass = 'yomon';
+                }
+
+                container.innerHTML += `
+                    <div class="product-card ${cardClass}">
+                        <div class="prod-title">${item.name}</div>
+                        <div class="prod-info">Omborda bor: <b>${item.qty} ${unitStr}</b></div>
+                        <div class="prod-info">Minimal chegara: ${item.limit} ${unitStr}</div>
+                        <div class="tavsiya ${tavsiyaClass}">Tavsiya: ${tavsiyaText}</div>
+                        <span class="status-badge ${badgeClass}">${badgeText}</span>
+                        <div class="actions-row">
+                            <button class="btn-act btn-p" onclick="updateQty('${item.id}', ${item.qty}, 1)">+1</button>
+                            <button class="btn-act btn-m" onclick="updateQty('${item.id}', ${item.qty}, -1)">-1</button>
+                            <button class="btn-act btn-m" style="background-color: #ed8936;" onclick="updateQty('${item.id}', ${item.qty}, -5)">-5</button>
+                            <button class="btn-act btn-m" style="background-color: #dd6b20;" onclick="updateQty('${item.id}', ${item.qty}, -10)">-10</button>
+                            <button class="btn-act btn-d" onclick="deleteItem('${item.id}')">🗑️</button>
+                        </div>
+                    </div>`;
+            });
+
+            document.getElementById('count-jami').innerText = jami;
+            document.getElementById('count-kam').innerText = kam;
+            document.getElementById('count-tugadi').innerText = tugadi;
         }
 
         window.updateQty = async function(id, currentQty, amount) {
